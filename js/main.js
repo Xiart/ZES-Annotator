@@ -71,16 +71,17 @@ $(document).ready(function(){
 	
 	$('mark').append(`<span class="position-absolute top-0 start-100 translate-middle p-2 bg-danger border border-light rounded-circle"></span>`);
 	PerformTextSplicing();
-	$.when(TagExistingNames()).then(UpdateDictionary());
+	$.when(TagExistingNames()).then(UpdateDictionary()).then(PopulateTree());
 	RefreshData();
 	
 	$('mark').delegate('.rounded-circle', 'click', function(){
 		var SentKey = $(this).closest('mark').data('sentkey');
-		RawTextParas[$(this).closest('mark').parent().data('parakey')].sentences[SentKey].sentinfo = [];
+		var ParaKey = $(this).closest('mark').parent().data('parakey');
+		RawTextParas[ParaKey].sentences[SentKey].sentinfo = [];
 		$(this).closest('mark').children().eq(0).remove();
 		var txt = $(this).closest('mark').text().replace(/\s+/g, ' ').trim();
 		$(this).closest('mark').replaceWith(txt);
-		UpdateDictionary();
+		UpdateDictionary(SentKey,ParaKey);
 	});
 
 	$('.entities').delegate('.entity', 'click', function(){
@@ -233,24 +234,27 @@ function UpdateDictionary1()
 	});
 }
 
-function UpdateDictionary()
+function UpdateDictionary(SKey, PKey)
 {
 	var tagindex = 0;
 	var ParaKey = 'Para-0';
 	var PreviousWordPos = 0;
 	var subsentencetext = '';
 	for(var sentind = 0; sentind < Object.keys(RawTextParas[ParaKey].sentences).length; sentind++){
+		if(SKey && PKey){
+			if(SKey != ('Sent-'+sentind) && PKey != ParaKey)continue;
+		}		
 		if(tagindex < $('.tagged').length){
 			var clonedmark = $($('.tagged')[tagindex]).clone();		
-		$(clonedmark).find('span').remove();
-		var markertext = String($(clonedmark).text()).replace(/\s+/g, ' ').trim();
+			$(clonedmark).find('span').remove();
+			var markertext = String($(clonedmark).text()).replace(/\s+/g, ' ').trim();
 			if($($('.tagged')[tagindex]).parent().data('parakey') != ParaKey){
 				sentind = 0;
 				PreviousWordPos = 0;
 				ParaKey = $($('.tagged')[tagindex]).parent().data('parakey');
 			}
-		subsentencetext = RawTextParas[ParaKey].sentences['Sent-'+sentind].senttext.substring(PreviousWordPos);
-		var sentencetext = RawTextParas[ParaKey].sentences['Sent-'+sentind].senttext;
+			subsentencetext = RawTextParas[ParaKey].sentences['Sent-'+sentind].senttext.substring(PreviousWordPos);
+			var sentencetext = RawTextParas[ParaKey].sentences['Sent-'+sentind].senttext;
 			if(subsentencetext.includes(markertext)){
 				if(subsentencetext.indexOf(markertext)+PreviousWordPos < PreviousWordPos){
 					PreviousWordPos = 0;
@@ -258,12 +262,14 @@ function UpdateDictionary()
 				}
 				RawTextParas[ParaKey].sentences['Sent-'+sentind].sentinfo.push({'word': markertext, 'tag': $($('.tagged')[tagindex]).find('span:first').text(), 'start': PreviousWordPos+subsentencetext.indexOf(markertext), 'end': PreviousWordPos+subsentencetext.indexOf(markertext) + markertext.length-1, 'score': 0});
 				$($('.tagged')[tagindex]).attr('data-sentkey', 'Sent-'+sentind);
-				tagindex++;
+				tagindex++;			
 				sentind--;
-				PreviousWordPos = PreviousWordPos+subsentencetext.indexOf(markertext) + markertext.length;			
+				PreviousWordPos = PreviousWordPos+subsentencetext.indexOf(markertext) + markertext.length;						
 			}
 			else{
+				// sentence will be broken here and new sentence with the next iteration.
 				PreviousWordPos  = 0;
+				if(SKey)break;
 			}
 		}		
 	}
@@ -291,6 +297,41 @@ function TagExistingNames()
 				  .addClass('tagged');
 		}		
 	});
+}
+
+function PopulateTree()
+{
+	var liststructure = `<ul>`;
+	for(var di = 0; di < Object.keys(RawTextParas).length; di++){
+		liststructure += `<li class='isFolder'>${'Para-'+di}
+		<ul>
+		<li>Start: ${RawTextParas['Para-'+di].start}</li>
+		<li>End: ${RawTextParas['Para-'+di].end}</li>
+		<li>SentenceCount: ${Object.keys(RawTextParas['Para-'+di].sentences).length} </li>`;
+		for(var si = 0; si < Object.keys(RawTextParas['Para-'+di].sentences).length; si++){			 
+			liststructure += `<li class='isFolder'>Text: ${RawTextParas['Para-'+di].sentences['Sent-'+si].senttext}
+			<ul>
+			<li>Start: ${RawTextParas['Para-'+di].sentences['Sent-'+si].start}</li>
+			<li>End: ${RawTextParas['Para-'+di].sentences['Sent-'+si].end}</li>
+			<li>EntityCount: ${RawTextParas['Para-'+di].sentences['Sent-'+si].sentinfo.length}</li>`
+			for(var wi = 0; wi < RawTextParas['Para-'+di].sentences['Sent-'+si].sentinfo.length; wi++){				
+				liststructure += `<li class='isFolder'>${RawTextParas['Para-'+di].sentences['Sent-'+si].sentinfo[wi].word}
+				<ul>
+				<li>Entity: ${RawTextParas['Para-'+di].sentences['Sent-'+si].sentinfo[wi].tag}</li>
+				<li>Start: ${RawTextParas['Para-'+di].sentences['Sent-'+si].sentinfo[wi].start}</li>
+				<li>End: ${RawTextParas['Para-'+di].sentences['Sent-'+si].sentinfo[wi].end}</li>
+				<li>Weight: ${RawTextParas['Para-'+di].sentences['Sent-'+si].sentinfo[wi].score}</li>
+				</ul>
+				</li>`;
+			}
+
+			liststructure +='</ul></li>';
+		}		
+		liststructure+=`</ul></li>`;
+	}
+	liststructure += '</ul>';
+	$.when($('#annotationtree').html(liststructure)).then($('#annotationtree').jstree());
+
 }
 
 function download(content, fileName, contentType) {
