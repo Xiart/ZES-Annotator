@@ -71,17 +71,20 @@ $(document).ready(function(){
 	
 	$('mark').append(`<span class="position-absolute top-0 start-100 translate-middle p-2 bg-danger border border-light rounded-circle"></span>`);
 	PerformTextSplicing();
-	$.when(TagExistingNames()).then(UpdateDictionary()).then(PopulateTree());
+	$.when(TagExistingNames()).then(UpdateDictionary()).then(PopulateTree()).then($('#annotationtree').jstree());
 	RefreshData();
 	
 	$('mark').delegate('.rounded-circle', 'click', function(){
 		var SentKey = $(this).closest('mark').data('sentkey');
 		var ParaKey = $(this).closest('mark').parent().data('parakey');
-		RawTextParas[ParaKey].sentences[SentKey].sentinfo = [];
+		if(SentKey){RawTextParas[ParaKey].sentences[SentKey].sentinfo = [];}
 		$(this).closest('mark').children().eq(0).remove();
 		var txt = $(this).closest('mark').text().replace(/\s+/g, ' ').trim();
 		$(this).closest('mark').replaceWith(txt);
-		UpdateDictionary(SentKey,ParaKey);
+		if(SentKey){
+			$('#annotationtree').jstree(true).destroy();
+			$.when(UpdateDictionary(SentKey,ParaKey)).then(PopulateTree()).then($('#annotationtree').jstree());		
+		}		
 	});
 
 	$('.entities').delegate('.entity', 'click', function(){
@@ -91,7 +94,7 @@ $(document).ready(function(){
 	$("#btn_addentity").on("click",function(){
 		var entityNameValue = $("#txt_entityname").val();
 		if(entityNameValue != ''){
-			if(!(ExtendedContains($("#txt_entityname").val()))){
+			if(ExtendedContains($("#txt_entityname").val()) == -1){
 				$("#annotation-ner").append("<button class = 'ner-button' style='background-color:rgb("+getRandomInt(128,255)+","+getRandomInt(128,255)+","+getRandomInt(128,255)+");'>"+entityNameValue+"</div>");
 				localStorage.setItem("spacy-annotation-entity-names",$("#annotation-ner").html());
 				RefreshData();
@@ -109,12 +112,17 @@ $(document).ready(function(){
 			range = sel.getRangeAt(0);
 			var entityID = Math.round(Math.random()*1000000000000).toString();
 			caretPos = getCaretCharacterOffsetWithin(document.getElementById("DOIText"));
-			nodeText = "<div id='ner-div' data-entity-id-marked = '"+entityID+"' style='background-color:"+this.style.backgroundColor+"'>"+entityText+"</div>";
+			var nodeText = `<mark class="entity tagged new" style="background: ${this.style.backgroundColor}; padding: 0.45em 0.6em; margin: 0px 0.25em; line-height: 1; border-radius: 0.35em;">
+			${entityText} <span style="font-size: 0.8em; font-weight: bold; line-height: 1; border-radius: 0.35em; vertical-align: middle; margin-left: 0.5rem">${$(this).text()}</span>
+		<span class="position-absolute top-0 start-100 translate-middle p-2 bg-danger border border-light rounded-circle"></span></mark>`
+			//nodeText = "<div id='ner-div' data-entity-id-marked = '"+entityID+"' style='background-color:"+this.style.backgroundColor+"'>"+entityText+"</div>";
 			document.execCommand("insertHTML",false,nodeText);
+			$('#annotationtree').jstree(true).destroy();
+			RawTextParas = {};			
+			$.when(PerformTextSplicing()).then(UpdateDictionary()).then(PopulateTree()).then($('#annotationtree').jstree());
 		}
-		var entityStartPosition = caretPos - entityTextLength;
-		var entityEndPosition = caretPos
-		console.log(entityText,(entityStartPosition+1),entityEndPosition);
+		// var entityStartPosition = caretPos - entityTextLength;
+		// var entityEndPosition = caretPos;
 		//$("#JSON-out").append("<div data-entity-id-JSON = '"+entityID+"' class='entity-JSON' style='background-color:"+this.style.backgroundColor+"'>("+(entityStartPosition)+","+entityEndPosition+",\""+entityType+"\"),<div data-entity-id-jsonx = '"+entityID+"' class='JSONdelete'>x</div></div>");
 	});
 	$(document).on("dblclick","#ner-div",function(){
@@ -163,6 +171,7 @@ $(document).ready(function(){
 	$("#annotation-text").keypress(function(e) {
 		e.preventDefault();
 	});
+	$('#downloadinfo').on('click', function(){ DownloadInformationDictionary(JSON.stringify(RawTextParas),'DOIInfo.json','json'); });
 });
 var RawTextParas = {};
 var Entities = [];
@@ -309,7 +318,7 @@ function PopulateTree()
 		<li>End: ${RawTextParas['Para-'+di].end}</li>
 		<li>SentenceCount: ${Object.keys(RawTextParas['Para-'+di].sentences).length} </li>`;
 		for(var si = 0; si < Object.keys(RawTextParas['Para-'+di].sentences).length; si++){			 
-			liststructure += `<li class='isFolder'>Text: ${RawTextParas['Para-'+di].sentences['Sent-'+si].senttext}
+			liststructure += `<li class='isFolder'>Sent.${si}-Text: ${RawTextParas['Para-'+di].sentences['Sent-'+si].senttext}
 			<ul>
 			<li>Start: ${RawTextParas['Para-'+di].sentences['Sent-'+si].start}</li>
 			<li>End: ${RawTextParas['Para-'+di].sentences['Sent-'+si].end}</li>
@@ -330,11 +339,12 @@ function PopulateTree()
 		liststructure+=`</ul></li>`;
 	}
 	liststructure += '</ul>';
-	$.when($('#annotationtree').html(liststructure)).then($('#annotationtree').jstree());
+	//$("#annotationtree").jstree(true).destroy();
+	$.when($('#annotationtree').html(liststructure));
 
 }
 
-function download(content, fileName, contentType) {
+function DownloadInformationDictionary(content, fileName, contentType) {
 	const a = document.createElement("a");
 	const file = new Blob([content], { type: contentType });
 	a.href = URL.createObjectURL(file);
